@@ -4,13 +4,16 @@
 #include <marlin/Global.h>
 #include "lcio.h"
 #include "EVENT/LCStrVec.h"
-#include "IMPL/LCCollectionVec.h"
-#include "UTIL/LCRelationNavigator.h"
-#include <EVENT/MCParticle.h>
+#include "EVENT/LCCollection.h"
 #include "EVENT/ReconstructedParticle.h"
-#include <IMPL/ReconstructedParticleImpl.h>
+#include "IMPL/LCCollectionVec.h"
+#include "IMPL/ReconstructedParticleImpl.h"
 #include "IMPL/ParticleIDImpl.h"
 #include "UTIL/PIDHandler.h"
+#include "marlin/VerbosityLevels.h"
+#include "TFile.h"
+#include "TH1I.h"
+#include "TTree.h"
 #include <string>
 #include <vector>
 #include <math.h>
@@ -55,6 +58,12 @@ private:
 	int					m_nEvt;
 	int					m_nRunSum;
 	int					m_nEvtSum;
+	int					m_nInJets;
+	int					m_nOutJets;
+	int					m_nInIsoLeps;
+	int					m_nOutIsoLeps;
+	float					m_IsoLepsInvMass;
+	FloatVector				m_IsoLepPairsInvMass;
 	bool					m_fillRootTree = true;
 
 	int					m_nJets = 0;
