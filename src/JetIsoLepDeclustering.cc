@@ -1,5 +1,9 @@
 #include "JetIsoLepDeclustering.h"
 #include <iostream>
+#include "TFile.h"
+#include "TH2F.h"
+#include "TF1.h"
+#include "TTree.h"
 using namespace lcio ;
 using namespace marlin ;
 
@@ -12,7 +16,9 @@ JetIsoLepDeclustering::JetIsoLepDeclustering():
 	m_nRunSum(0),
 	m_nEvtSum(0),
 	m_nInJets(0),
+	m_nInJetPFOs(0),
 	m_nOutJets(0),
+	m_nOutJetPFOs(0),
 	m_nInIsoLeps(0),
 	m_nOutIsoLeps(0),
 	m_IsoLepsInvMass(0.f),
@@ -93,11 +99,24 @@ void JetIsoLepDeclustering::init()
 		m_pTTree->SetDirectory(m_pTFile);
 		m_pTTree->Branch("event", &m_nEvt, "event/I");
 		m_pTTree->Branch("nInJets", &m_nInJets, "nInJets/I");
+		m_pTTree->Branch("nInJetPFOs", &m_nInJetPFOs, "nInJetPFOs/I");
 		m_pTTree->Branch("nOutJets", &m_nOutJets, "nOutJets/I");
+		m_pTTree->Branch("nOutJetPFOs", &m_nOutJetPFOs, "nOutJetPFOs/I");
 		m_pTTree->Branch("nInIsoLeps", &m_nInIsoLeps, "nInIsoLeps/I");
 		m_pTTree->Branch("nOutIsoLeps", &m_nOutIsoLeps, "nOutIsoLeps/I");
 		m_pTTree->Branch("IsoLepsInvMass", &m_IsoLepsInvMass, "IsoLepsInvMass/F");
 		m_pTTree->Branch("IsoLepPairsInvMass", &m_IsoLepPairsInvMass);
+		h_nJetnIsolep = new TH2F( "nJetnIsolep" , "; nJets ; nIsoLeps" , 5 , 0.0 , 5.0 , 5 , 0.0 , 5.0 );
+		h_nJetnIsolep->GetXaxis()->SetBinLabel(1,"0");
+		h_nJetnIsolep->GetXaxis()->SetBinLabel(2,"1");
+		h_nJetnIsolep->GetXaxis()->SetBinLabel(3,"2");
+		h_nJetnIsolep->GetXaxis()->SetBinLabel(4,"3");
+		h_nJetnIsolep->GetXaxis()->SetBinLabel(5,"4");
+		h_nJetnIsolep->GetYaxis()->SetBinLabel(1,"0");
+		h_nJetnIsolep->GetYaxis()->SetBinLabel(2,"1");
+		h_nJetnIsolep->GetYaxis()->SetBinLabel(3,"2");
+		h_nJetnIsolep->GetYaxis()->SetBinLabel(4,"3");
+		h_nJetnIsolep->GetYaxis()->SetBinLabel(5,"4");
 		streamlog_out(DEBUG0) << "	Created root file/tree/histograms" << std::endl ;
 	}
 	this->Clear();
@@ -108,7 +127,9 @@ void JetIsoLepDeclustering::Clear()
 {
 	streamlog_out(DEBUG0) << "   clear called" << std::endl ;
 	m_nInJets = 0;
+	m_nInJetPFOs = 0;
 	m_nOutJets = 0;
+	m_nOutJetPFOs = 0;
 	m_nInIsoLeps = 0;
 	m_nOutIsoLeps = 0;
 	m_IsoLepsInvMass = 0;
@@ -143,19 +164,20 @@ void JetIsoLepDeclustering::processEvent( EVENT::LCEvent *pLCEvent )
 
 	const EVENT::LCCollection *JetCollection{};
 	const EVENT::LCCollection *IsoleptonCollection{};
-	LCCollectionVec *m_IsolepCol = new LCCollectionVec( LCIO::RECONSTRUCTEDPARTICLE );
+	IMPL::LCCollectionVec* m_IsolepCol(NULL);
+	m_IsolepCol = new IMPL::LCCollectionVec( LCIO::RECONSTRUCTEDPARTICLE );
 	m_IsolepCol->setSubset( true );
-	LCCollectionVec* m_NewPFOsCol = new IMPL::LCCollectionVec(LCIO::RECONSTRUCTEDPARTICLE);
+	IMPL::LCCollectionVec* m_NewPFOsCol(NULL);
+	m_NewPFOsCol = new IMPL::LCCollectionVec(LCIO::RECONSTRUCTEDPARTICLE);
 	m_NewPFOsCol->setSubset( true );
-
 	try
 	{
 		JetCollection = pLCEvent->getCollection( m_inputJetCollection );
 		IsoleptonCollection = pLCEvent->getCollection( m_inputIsoLepCollection );
 
-		int nJets = JetCollection->getNumberOfElements();
-		streamlog_out( DEBUG4 ) << "	" << nJets << " jets in event, looking for " << m_nJets << " jets" << std::endl;
-		if ( nJets != m_nJets )
+		m_nInJets = JetCollection->getNumberOfElements();
+		streamlog_out( DEBUG4 ) << "	" << m_nInJets << " jets in event, looking for " << m_nJets << " jets" << std::endl;
+		if ( m_nInJets != m_nJets )
 		{
 			trueNJets = false;
 			streamlog_out( DEBUG3 ) << "	Number of jets in the event mismatches the asked number of jets, --------EVENT REJECTED--------" << std::endl;
@@ -165,25 +187,44 @@ void JetIsoLepDeclustering::processEvent( EVENT::LCEvent *pLCEvent )
 			trueNJets = true;
 			streamlog_out( DEBUG3 ) << "	Number of jets in the event matches the asked number of jets, --------EVENT ACCEPTED--------" << std::endl;
 		}
-		for ( int i_jet = 0 ; i_jet < nJets ; ++i_jet )
+		for ( int i_jet = 0 ; i_jet < m_nInJets ; ++i_jet )
 		{
-			ReconstructedParticle* jet = dynamic_cast<ReconstructedParticle*>( JetCollection->getElementAt( i_jet ) );
-			for (unsigned int i_pfo = 0 ; i_pfo < jet->getParticles().size() ; ++i_pfo )
+			ReconstructedParticle* jet = static_cast<ReconstructedParticle*>( JetCollection->getElementAt( i_jet ) );
+			m_nInJetPFOs += jet->getParticles().size();
+			streamlog_out( DEBUG3 ) << "	Jet " << i_jet << " has " << jet->getParticles().size() << " PFOs" << std::endl;
+			for ( unsigned int i_pfo = 0 ; i_pfo < jet->getParticles().size() ; ++i_pfo )
 			{
 				m_NewPFOsCol->addElement( jet->getParticles()[ i_pfo ] );
+				++m_nOutJetPFOs;
 			}
 		}
 
-		int nIsoLeps = IsoleptonCollection->getNumberOfElements();
-		streamlog_out( DEBUG4 ) << "	" << nIsoLeps << " isolated leptons in event, looking for " << m_nIsoLeps << " isolated leptons" << std::endl;
-		if ( nIsoLeps < m_nIsoLeps )
+		m_nInIsoLeps = IsoleptonCollection->getNumberOfElements();
+		streamlog_out( DEBUG4 ) << "	" << m_nInIsoLeps << " isolated leptons in event, looking for " << m_nIsoLeps << " isolated leptons" << std::endl;
+		if ( m_fillRootTree )
+		{
+			h_nJetnIsolep->Fill( m_nInJets + 0.5 , m_nInIsoLeps + 0.5 );
+			++n_nJetnIsolep;
+		}
+		if ( m_nInIsoLeps < m_nIsoLeps )
 		{
 			trueNIsoLeps = false;
 			streamlog_out( DEBUG3 ) << "	Number of isolated leptons in the event is less than the asked number of isolated leptons, --------EVENT REJECTED--------" << std::endl;
 		}
-		else if ( nIsoLeps == m_nIsoLeps )
+		else if ( m_nInIsoLeps == m_nIsoLeps )
 		{
 			trueNIsoLeps = true;
+			for ( int i_lep = 0 ; i_lep < m_nInIsoLeps ; ++i_lep )
+			{
+				m_IsolepCol->addElement( IsoleptonCollection->getElementAt( i_lep ) );
+				streamlog_out( DEBUG3 ) << "	One Isolated lepton added to new isolated leptons" << std::endl;
+				++m_nOutIsoLeps;
+			}
+			ReconstructedParticle* lepton1 = static_cast<ReconstructedParticle*>( IsoleptonCollection->getElementAt( 0 ) );
+			ReconstructedParticle* lepton2 = static_cast<ReconstructedParticle*>( IsoleptonCollection->getElementAt( 1 ) );
+			TLorentzVector lep1FourMomentum = TLorentzVector( lepton1->getMomentum()[ 0 ] , lepton1->getMomentum()[ 1 ] , lepton1->getMomentum()[ 2 ] , lepton1->getEnergy() );
+			TLorentzVector lep2FourMomentum = TLorentzVector( lepton2->getMomentum()[ 0 ] , lepton2->getMomentum()[ 1 ] , lepton2->getMomentum()[ 2 ] , lepton2->getEnergy() );
+			m_IsoLepsInvMass = ( lep1FourMomentum + lep2FourMomentum ).M();
 			streamlog_out( DEBUG3 ) << "	Number of isolated leptons in the event matches the asked number of isolated leptons, --------EVENT ACCEPTED--------" << std::endl;
 		}
 		else
@@ -191,15 +232,16 @@ void JetIsoLepDeclustering::processEvent( EVENT::LCEvent *pLCEvent )
 			std::vector<double> massDiff{};
 			std::vector<int> lep1Index{};
 			std::vector<int> lep2Index{};
-			for ( int i_lep1 = 0 ; i_lep1 < nIsoLeps - 1 ; ++i_lep1 )
+			for ( int i_lep1 = 0 ; i_lep1 < m_nInIsoLeps - 1 ; ++i_lep1 )
 			{
-				ReconstructedParticle* lepton1 = dynamic_cast<ReconstructedParticle*>( IsoleptonCollection->getElementAt( i_lep1 ) );
+				ReconstructedParticle* lepton1 = static_cast<ReconstructedParticle*>( IsoleptonCollection->getElementAt( i_lep1 ) );
 				TLorentzVector lep1FourMomentum = TLorentzVector( lepton1->getMomentum()[ 0 ] , lepton1->getMomentum()[ 1 ] , lepton1->getMomentum()[ 2 ] , lepton1->getEnergy() );
-				for ( int i_lep2 = i_lep1 + 1 ; i_lep2 < nIsoLeps ; ++i_lep2 )
+				for ( int i_lep2 = i_lep1 + 1 ; i_lep2 < m_nInIsoLeps ; ++i_lep2 )
 				{
-					ReconstructedParticle* lepton2 = dynamic_cast<ReconstructedParticle*>( IsoleptonCollection->getElementAt( i_lep2 ) );
+					ReconstructedParticle* lepton2 = static_cast<ReconstructedParticle*>( IsoleptonCollection->getElementAt( i_lep2 ) );
 					TLorentzVector lep2FourMomentum = TLorentzVector( lepton2->getMomentum()[ 0 ] , lepton2->getMomentum()[ 1 ] , lepton2->getMomentum()[ 2 ] , lepton2->getEnergy() );
 					double diLepInvMass = ( lep1FourMomentum + lep2FourMomentum ).M();
+					m_IsoLepPairsInvMass.push_back( diLepInvMass );
 					massDiff.push_back( fabs( diLepInvMass - m_diLepInvMass ) );
 					lep1Index.push_back( i_lep1 );
 					lep2Index.push_back( i_lep2 );
@@ -215,17 +257,22 @@ void JetIsoLepDeclustering::processEvent( EVENT::LCEvent *pLCEvent )
 					smallestMassDiff = massDiff[ i_pair ];
 					iLepton1 = lep1Index[ i_pair ];
 					iLepton2 = lep2Index[ i_pair ];
+					m_IsoLepsInvMass = m_IsoLepPairsInvMass[ i_pair ];
 				}
 			}
-			for ( int i_lep = 0 ; i_lep < nIsoLeps ; ++i_lep )
+			for ( int i_lep = 0 ; i_lep < m_nInIsoLeps ; ++i_lep )
 			{
 				if ( i_lep == iLepton1 || i_lep == iLepton2 )
 				{
 					m_IsolepCol->addElement( IsoleptonCollection->getElementAt( i_lep ) );
+					streamlog_out( DEBUG3 ) << "	One Isolated lepton added to new isolated leptons" << std::endl;
+					++m_nOutIsoLeps;
 				}
 				else
 				{
 					m_NewPFOsCol->addElement( IsoleptonCollection->getElementAt( i_lep ) );
+					streamlog_out( DEBUG3 ) << "	One lepton removed from IsolatedLeptons and added to new PFO collection" << std::endl;
+					++m_nOutJetPFOs;
 				}
 			}
 			if ( iLepton1 != -1 && iLepton2 != -1 )
@@ -237,8 +284,11 @@ void JetIsoLepDeclustering::processEvent( EVENT::LCEvent *pLCEvent )
 		m_useEvent = ( trueNJets && trueNIsoLeps ? 1 : 0 );
 		m_IsolepCol->parameters().setValue( "useEvent" , ( int )m_useEvent );
 
-		pLCEvent->addCollection( m_IsolepCol , m_outputIsolepCollection );
-		pLCEvent->addCollection( m_NewPFOsCol , m_outputPfoCollection );
+		streamlog_out( DEBUG3 ) << "	All New PFOs are " << m_NewPFOsCol->getNumberOfElements() << " PFOs in total" << std::endl;
+		streamlog_out( DEBUG3 ) << "	All New Isolated Leptons are " << m_IsolepCol->getNumberOfElements() << " IsoLeps in total" << std::endl;
+
+		pLCEvent->addCollection( m_IsolepCol , m_outputIsolepCollection.c_str() );
+		pLCEvent->addCollection( m_NewPFOsCol , m_outputPfoCollection.c_str() );
 		if ( m_fillRootTree )
 		{
 			m_pTTree->Fill();
@@ -248,7 +298,6 @@ void JetIsoLepDeclustering::processEvent( EVENT::LCEvent *pLCEvent )
 	{
 		streamlog_out(MESSAGE) << "	Input collection not found in event " << m_nEvt << std::endl;
 	}
-	m_nEvt++;
 }
 
 void JetIsoLepDeclustering::check( EVENT::LCEvent *pLCEvent )
@@ -287,6 +336,8 @@ void JetIsoLepDeclustering::end()
 	{
 		m_pTFile->cd();
 		m_pTTree->Write();
+		h_nJetnIsolep->Scale( 100.0 / n_nJetnIsolep );
+		h_nJetnIsolep->Write();
 		m_pTFile->Close();
 		delete m_pTFile;
 	}

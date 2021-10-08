@@ -22,6 +22,7 @@
 class TFile;
 class TH1F;
 class TH1I;
+class TH2F;
 class TTree;
 using namespace lcio ;
 using namespace marlin ;
@@ -59,11 +60,14 @@ private:
 	int					m_nRunSum;
 	int					m_nEvtSum;
 	int					m_nInJets;
+	int					m_nInJetPFOs;
 	int					m_nOutJets;
+	int					m_nOutJetPFOs;
 	int					m_nInIsoLeps;
 	int					m_nOutIsoLeps;
 	float					m_IsoLepsInvMass;
 	FloatVector				m_IsoLepPairsInvMass;
+	int					n_nJetnIsolep = 0;
 	bool					m_fillRootTree = true;
 
 	int					m_nJets = 0;
@@ -74,5 +78,6 @@ private:
 
 	TFile					*m_pTFile{};
 	TTree					*m_pTTree{};
+	TH2F					*h_nJetnIsolep{};
 };
 #endif
